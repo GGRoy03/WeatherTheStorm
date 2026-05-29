@@ -2,11 +2,11 @@ using UnityEngine;
 
 public class BuildHUD : MonoBehaviour
 {
+    [Header("Dependencies")]
     [SerializeField] private GridSystem m_Grid;
-    [SerializeField] private GameObject m_ObjectToPlace;
 
-    void Start()
+    public void OnBuildObject(GameObject objectToBuild)
     {
-        m_Grid.SetGhostObject(m_ObjectToPlace);
+        m_Grid.SetGhostObject(objectToBuild);
     }
 }

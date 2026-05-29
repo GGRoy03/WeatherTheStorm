@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Runtime.CompilerServices;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -27,6 +26,7 @@ public class GridSystem : MonoBehaviour
 
     [Header("Inputs")]
     [SerializeField] private InputActionAsset m_InputMap;
+    [SerializeField] private bool             m_ClearSelectionOnPlace;
                      private InputAction      m_PointerPositionAction;
                      private InputAction      m_PointerMainAction;
 
@@ -49,14 +49,14 @@ public class GridSystem : MonoBehaviour
             m_PosZ = (int)Mathf.Floor((worldPosition.z - minZ) / cellSize);
         }
 
-        public bool IsInsideGrid(uint cellCountX, uint cellCountZ)
+        public readonly bool IsInsideGrid(uint cellCountX, uint cellCountZ)
         {
             bool result = m_PosX >= 0 && m_PosX < cellCountX &&
                           m_PosZ >= 0 && m_PosZ < cellCountZ;
             return result;
         }
 
-        public Vector3 ToWorldPosition(Vector3 start, uint cellSize)
+        public readonly Vector3 ToWorldPosition(Vector3 start, uint cellSize)
         {
             Vector3 result = new()
             {
@@ -68,7 +68,7 @@ public class GridSystem : MonoBehaviour
             return result;
         }
 
-        public int ToNativeIndexUnsafe(uint cellCountX)
+        public readonly int ToNativeIndexUnsafe(uint cellCountX)
         {
             int result = (int)(m_PosZ * cellCountX + m_PosX);
             return result;
@@ -80,13 +80,21 @@ public class GridSystem : MonoBehaviour
     // [Section] : Visual
     // =============================================================
 
+
     private void SetGhostColor(Color color, GameObject gameObject)
     {
-        Renderer renderer = gameObject.GetComponent<Renderer>();
-        Material material = renderer.material;
+        Renderer[] renderers = gameObject.GetComponentsInChildren<Renderer>();
+        for (int rendererIdx = 0; rendererIdx < renderers.Length; ++rendererIdx)
+        {
+            Renderer renderer = renderers[rendererIdx];
+            for (int materialIdx = 0; materialIdx < renderer.materials.Length; ++materialIdx)
+            {
+                Material material = renderer.materials[materialIdx];
 
-        Color transparentColor = new(color.r, color.g, color.b, m_GhostObjectAlpha);
-        material.color = transparentColor;
+                Color transparentColor = new(color.r, color.g, color.b, m_GhostObjectAlpha);
+                material.color = transparentColor;
+            }
+        }
     }
 
 
@@ -110,35 +118,30 @@ public class GridSystem : MonoBehaviour
         {
             //
             // TODO:
-            // x) Should query components in children as well and loop over it.
+            // x) Explain how this works.
             //
 
-            if(ghostInstance.TryGetComponent<Renderer>(out var renderer))
+            Renderer[] renderers = ghostInstance.GetComponentsInChildren<Renderer>();
+            for(int rendererIdx = 0; rendererIdx < renderers.Length; ++rendererIdx)
             {
+                Renderer renderer = renderers[rendererIdx];
                 renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-                //
-                // TODO:
-                // x) Explain all of this.
-                //
-
-                Material material = renderer.material;
-                material.SetFloat("_Surface", 1);
-                material.SetFloat("_Blend", 0);
-                material.SetFloat("_ZWrite", 0);
-                material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-                material.SetOverrideTag("RenderType", "Transparent");
-                material.renderQueue = 3000;
-                material.color       = new Color(material.color.r, material.color.g, material.color.b, m_GhostObjectAlpha);
-
-                m_GhostObject   = ghostInstance;
-                m_ObjectToPlace = objectToPlace;
+                for (int materialIdx = 0; materialIdx < renderer.materials.Length; ++materialIdx)
+                {
+                    Material material = renderer.materials[materialIdx];
+                    material.renderQueue = 3000;
+                    material.SetFloat("_Surface", 1);
+                    material.SetFloat("_Blend", 0);
+                    material.SetFloat("_ZWrite", 0);
+                    material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                    material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                    material.SetOverrideTag("RenderType", "Transparent");
+                }
             }
-            else
-            {
-                Debug.Log("No Renderer Attached To Game Object");
-            }
+
+            m_GhostObject   = ghostInstance;
+            m_ObjectToPlace = objectToPlace;
         }
     }
 
@@ -146,6 +149,16 @@ public class GridSystem : MonoBehaviour
     {
         m_GhostObject   = null;
         m_ObjectToPlace = null;
+    }
+
+    private void OnEnable()
+    {
+        m_InputMap.Enable();
+    }
+
+    private void OnDisable()
+    {
+        m_InputMap.Disable();
     }
 
 
@@ -207,6 +220,11 @@ public class GridSystem : MonoBehaviour
                 {
                     Instantiate(m_ObjectToPlace, ghostPos, Quaternion.identity);
                     m_OccupancySet[nativeIndex] = true;
+
+                    if(m_ClearSelectionOnPlace)
+                    {
+                        ClearGhostObject();
+                    }
                 }
                 else
                 {

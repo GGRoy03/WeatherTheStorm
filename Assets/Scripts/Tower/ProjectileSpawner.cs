@@ -40,10 +40,8 @@ public partial struct ProjectileSpawner : ISystem
 
         void Execute([EntityIndexInQuery] int index, ref LocalTransform transform)
         {
-            Debug.Log("Running Placement Job");
-
-            var random    = Random.CreateFromIndex(SeedOffset + (uint)index);
-            var position  = random.NextFloat2Direction() * 10.0f;
+            var random   = Random.CreateFromIndex(SeedOffset + (uint)index);
+            var position = random.NextFloat2Direction() * 10.0f;
             transform.Position = new float3(position[0], 5.0f, position[1]);
         }
     }

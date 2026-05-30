@@ -8,10 +8,9 @@ public class ProjectileAuthoring : MonoBehaviour
     {
         public override void Bake(ProjectileAuthoring authoring)
         {
-            Debug.Log("Baking Projectile");
-
             var entity = GetEntity(TransformUsageFlags.Dynamic);
             AddComponent<Projectile>(entity);
+            AddComponent<EnemyTag>(entity);
         }
     }
 

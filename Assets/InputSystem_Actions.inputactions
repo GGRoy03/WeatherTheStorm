@@ -95,6 +95,24 @@
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": true
+                },
+                {
+                    "name": "RotateShapeCW",
+                    "type": "Button",
+                    "id": "cef18125-6734-48f7-a5c9-8cf80aedf942",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "RotateShapeCCW",
+                    "type": "Button",
+                    "id": "62955a86-703b-4abf-9007-807c79419303",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
                 }
             ],
             "bindings": [
@@ -436,6 +454,28 @@
                     "processors": "",
                     "groups": ";Keyboard&Mouse",
                     "action": "PointerOnScreen",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "2f7d556f-4119-4ed8-aed7-25c2e66f5d20",
+                    "path": "<Keyboard>/e",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": ";Keyboard&Mouse",
+                    "action": "RotateShapeCW",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "1a7bf4cd-ed92-4269-81d5-7e10f5383fb7",
+                    "path": "<Keyboard>/q",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": ";Keyboard&Mouse",
+                    "action": "RotateShapeCCW",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

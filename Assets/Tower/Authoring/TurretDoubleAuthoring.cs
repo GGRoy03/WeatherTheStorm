@@ -1,5 +1,6 @@
 using Unity.Entities;
 using UnityEngine;
+using WeatherTheStorm.Enemy;
 using WeatherTheStorm.Tower;
 
 namespace WeatherTheStorm.Tower
@@ -10,8 +11,6 @@ namespace WeatherTheStorm.Tower
         {
             public override void Bake(TurretDoubleAuthoring authoring)
             {
-                Debug.Log("Baking Tower!");
-
                 //
                 // TODO:
                 // x) Is dynamic needed if I only ever need to rotate the turret?
@@ -28,6 +27,11 @@ namespace WeatherTheStorm.Tower
                 {
                     Duration = 1.5f,
                     Elapsed  = 0.0f,
+                });
+
+                AddComponent(entity, new Projectile
+                {
+                    Type = ProjectileType.Rocket,
                 });
             }
         }

@@ -23,6 +23,11 @@ namespace WeatherTheStorm.Enemy
                 {
                     Position = float3.zero,
                 });
+                AddComponent(entity, new Status
+                {
+                    Health    = 5.0f,
+                    MaxHealth = 5.0f,
+                });
             }
         }
     }

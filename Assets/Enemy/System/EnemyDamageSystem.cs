@@ -43,8 +43,8 @@ namespace WeatherTheStorm.Enemy
 
                 JobHandle processDamageJob = new ProcessDamageEventJob
                 {
-                    HealthTable = m_StatusTable,
-                    CommandBuffer = commandBuffer,
+                    HealthTable         = m_StatusTable,
+                    CommandBuffer       = commandBuffer,
                     DamageRequestStream = towerOutput.DamageRequestStream,
 
                 }.Schedule(state.Dependency);

@@ -9,7 +9,7 @@ using Unity.Physics;
 using Unity.Transforms;
 
 using UnityEngine;
-
+using WeatherTheStorm.Audio;
 using WeatherTheStorm.Enemy;
 using WeatherTheStorm.Helpers;
 
@@ -94,8 +94,8 @@ namespace WeatherTheStorm.Tower
             m_PathPositionTable.Update(ref state);
 
             var commandBufferSingleton = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>();
-            var commandBuffer          = commandBufferSingleton.CreateCommandBuffer(state.WorldUnmanaged);
-            var commandBufferParallel  = commandBuffer.AsParallelWriter();
+            var commandBuffer = commandBufferSingleton.CreateCommandBuffer(state.WorldUnmanaged);
+            var commandBufferParallel = commandBuffer.AsParallelWriter();
 
             JobHandle updateHomingProjectileJob = new HomingProjectileJob
             {
@@ -123,21 +123,24 @@ namespace WeatherTheStorm.Tower
                 //    however they want. There's a slight issue with this being that we can technically
                 //    damage dead entities which is probably fine overall.
                 //
-                // TODO:
-                // x) How does the allocation work? How do we pass it to the enemy system?
-                //    There seems to be no good solutions here without having some insane boilerplate
-                //    indirection insanity.
-                //
 
-                int workerCount  = JobsUtility.JobWorkerCount + 1;
-                var damageStream = new NativeStream(workerCount, Allocator.TempJob);
+                int workerCount        = JobsUtility.JobWorkerCount + 1;
+                var damageStream       = new NativeStream(workerCount, Allocator.TempJob);
+                var spatialSoundStream = new NativeStream(workerCount, Allocator.TempJob);
 
                 triggerMissileJob = new ProjectileMissileJob
                 {
                     PhysicsWorld        = SystemAPI.GetSingleton<PhysicsWorldSingleton>(),
                     CommandBuffer       = commandBufferParallel,
                     DamageRequestStream = damageStream.AsWriter(),
+                    SpatialSoundStream  = spatialSoundStream.AsWriter(),
                 }.Schedule(projectileCollisionJob);
+
+                JobHandle playbackSpatialSoundJob = new ProjectileSpatialSoundJob
+                {
+                    SpatialSoundStream = spatialSoundStream
+                }.Schedule(triggerMissileJob);
+                spatialSoundStream.Dispose(playbackSpatialSoundJob);
 
                 //
                 // NOTE:
@@ -158,13 +161,13 @@ namespace WeatherTheStorm.Tower
         [BurstCompile]
         partial struct HomingProjectileJob : IJobEntity
         {
-            [ReadOnly] public ComponentLookup<PathPosition>      PathPositionTable;
-                       public EntityCommandBuffer.ParallelWriter CommandBuffer;
-                       public float                              DeltaTime;
+            [ReadOnly] public ComponentLookup<PathPosition> PathPositionTable;
+            public EntityCommandBuffer.ParallelWriter CommandBuffer;
+            public float DeltaTime;
 
             public void Execute([EntityIndexInQuery] int chunkIndex, in Entity entity, in ProjectileTarget target, ref HomingProjectile homing, ref LocalTransform transform)
             {
-                if(PathPositionTable.HasComponent(target.Entity))
+                if (PathPositionTable.HasComponent(target.Entity))
                 {
                     homing.LastKnownPos = PathPositionTable[target.Entity].Position;
 
@@ -174,7 +177,7 @@ namespace WeatherTheStorm.Tower
                 else
                 {
                     float distance = math.distancesq(homing.LastKnownPos, transform.Position);
-                    if(distance < 0.005f)
+                    if (distance < 0.005f)
                     {
                         CommandBuffer.SetComponentEnabled<ProjectileRequest>(chunkIndex, entity, true);
                     }
@@ -192,8 +195,8 @@ namespace WeatherTheStorm.Tower
         [WithPresent(typeof(ProjectileRequest))]
         partial struct ProjectileCollisionJob : IJobEntity
         {
-            [ReadOnly] public PhysicsWorldSingleton              PhysicsWorld;
-                       public EntityCommandBuffer.ParallelWriter CommandBuffer;
+            [ReadOnly] public PhysicsWorldSingleton PhysicsWorld;
+            public EntityCommandBuffer.ParallelWriter CommandBuffer;
 
             public void Execute([ChunkIndexInQuery] int chunkIndex, in Entity entity, in LocalTransform transform)
             {
@@ -207,16 +210,16 @@ namespace WeatherTheStorm.Tower
                 //
 
                 int projectileRigidBodyIndex = collisionWorld.GetRigidBodyIndex(entity);
-                if(projectileRigidBodyIndex >= 0 && projectileRigidBodyIndex < collisionWorld.NumBodies)
+                if (projectileRigidBodyIndex >= 0 && projectileRigidBodyIndex < collisionWorld.NumBodies)
                 {
                     OverlapAabbInput overlapInput = new()
                     {
-                        Aabb   = collisionWorld.Bodies[projectileRigidBodyIndex].CalculateAabb(),
+                        Aabb = collisionWorld.Bodies[projectileRigidBodyIndex].CalculateAabb(),
                         Filter = ECSPhysicsHelpers.ProjectileFilter,
                     };
 
                     var hits = new NativeList<int>(Allocator.Temp);
-                    if(collisionWorld.OverlapAabb(overlapInput, ref hits))
+                    if (collisionWorld.OverlapAabb(overlapInput, ref hits))
                     {
                         //
                         // NOTE:
@@ -226,14 +229,14 @@ namespace WeatherTheStorm.Tower
                         // projectile collides with has been hit.
                         //
 
-                        if(hits.Length > 1)
+                        if (hits.Length > 1)
                         {
                             //
                             // NOTE:
                             // We pay the cost of structural changes and frame of lag here for simplicity
                             // and because I can't find another simple way to do this. If we were to use
                             // something like a native stream, we'd read it from multiple jobs such
-                            // as the missible job and use it sparsely lookup into some table the
+                            // as the missile job and use it to sparsely lookup into some table the
                             // associated projectile which would probably just be terrible.
                             //
 
@@ -253,13 +256,15 @@ namespace WeatherTheStorm.Tower
         {
             [NativeSetThreadIndex] private readonly int ThreadIndex;
 
-            [ReadOnly] public PhysicsWorldSingleton              PhysicsWorld;
-                       public EntityCommandBuffer.ParallelWriter CommandBuffer;
-                       public NativeStream.Writer                DamageRequestStream;
+            [ReadOnly] public PhysicsWorldSingleton   PhysicsWorld;
+            public EntityCommandBuffer.ParallelWriter CommandBuffer;
+            public NativeStream.Writer                DamageRequestStream;
+            public NativeStream.Writer                SpatialSoundStream;
 
             public void Execute([ChunkIndexInQuery] int chunkIndex, in Entity entity, in ProjectileRequest request, in ProjectileMissile missile)
             {
                 DamageRequestStream.BeginForEachIndex(ThreadIndex);
+                SpatialSoundStream.BeginForEachIndex(ThreadIndex);
                 {
                     CollisionWorld collisionWorld = PhysicsWorld.CollisionWorld;
 
@@ -273,12 +278,55 @@ namespace WeatherTheStorm.Tower
                                 Target = hit.Entity,
                                 Damage = missile.Damage,
                             });
+
+                            SpatialSoundStream.Write(new SpatialSoundRequest
+                            {
+                                Position = request.From,
+                                Type = GameAudio.MissileLaunch,
+                            });
                         }
                     }
 
                     CommandBuffer.DestroyEntity(chunkIndex, entity);
                 }
+                SpatialSoundStream.EndForEachIndex();
                 DamageRequestStream.EndForEachIndex();
+            }
+        }
+
+        //
+        // TODO:
+        // x) That's the big downside of this approach is that, we need to process these streams
+        //    of data, but the logic is always the same... I wonder, can we just like put it in
+        //    another file or something? Would that work? What's the difference between a job entity
+        //    and a job?
+        //
+        // NOTE:
+        // x) I can't find a way to burst compile this, because I assume it goes to write memory
+        //    in the managed part which burst doesn't handle. Uhm, there are ways to make this work
+        //    if the make the audio stuff live in the ECS/DOTS part, but it's just a pain in the ass.
+        // x) This is just a dump copy job to allow systems that want to play audio to still burst
+        //    compile. I don't want to spend time profiling this so I just assume it's faster to do this.
+        //
+
+        partial struct ProjectileSpatialSoundJob : IJob
+        {
+            public NativeStream SpatialSoundStream;
+            public void Execute()
+            {
+                var streamReader = SpatialSoundStream.AsReader();
+                for (int pocketIdx = 0; pocketIdx < streamReader.ForEachCount; ++pocketIdx)
+                {
+                    streamReader.BeginForEachIndex(pocketIdx);
+                    {
+                        while (streamReader.RemainingItemCount > 0)
+                        {
+                            var spatialSoundRequest = streamReader.Read<SpatialSoundRequest>();
+                            SoundProducer.PlaySpatialSound(spatialSoundRequest);
+                        }
+                    }
+                    streamReader.EndForEachIndex();
+                }
             }
         }
     }

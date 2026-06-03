@@ -2,41 +2,49 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
+using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Transforms;
+
 using UnityEngine;
+
+using WeatherTheStorm.Audio;
 using WeatherTheStorm.Enemy;
 
 namespace WeatherTheStorm.Tower
 {
-    public enum ProjectileType
+    public enum TargetMode
     {
-        Rocket = 0,
+        Closest = 0,
     }
 
-    public struct AttackCooldown : IComponentData
+    public struct AttackCooldown : IComponentData, IEnableableComponent
     {
         public float Duration;
         public float Elapsed;
     }
 
-    public struct TargetClosest : IComponentData
+    public struct TargetingConfig : IComponentData
     {
-        public float SqrRadius;
+        public TargetMode Mode;
+        public float      SqrRange;
     }
 
-    public struct Projectile : IComponentData
+    public struct TowerProjectile : IComponentData
     {
-        public ProjectileType Type;
+        public Entity                      Prefab;
+        public UnityObjectRef<AudioClip>   FireSound;
+        public UnityObjectRef<AudioSource> AudioSource;
+    }
+
+    public struct TowerAudio : IComponentData
+    {
+        public UnityObjectRef<AudioClip> TurningSound;
     }
 
     public partial struct TargetingSystem : ISystem
     {
         private EntityQuery m_EnemyWithPosQuery;
-
-        private struct ReadyToFireTag : IComponentData
-        {
-        }
 
         private struct EnemyPositionData
         {
@@ -48,12 +56,6 @@ namespace WeatherTheStorm.Tower
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
-            //
-            // TODO:
-            // x) Is it really worth caching the query? If so, why not cache the other ones?
-            // x) Figure out the state.RequireForUpdate stuff.
-            //
-
             m_EnemyWithPosQuery = SystemAPI.QueryBuilder()
                 .WithAll<EnemyTag, LocalTransform>()
                 .Build();
@@ -62,28 +64,30 @@ namespace WeatherTheStorm.Tower
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            //
-            // TODO:
-            // x) Since we're using the begin simulation group, we have a frame of lag for tower's
-            //    ready to fire state. This is probably fine? Figure it out. It also allows us
-            //    to run some jobs widly in parallel because the structural changes are done at
-            //    frame boundaries anyways.
-            //
-
-            
-            var cooldownEntityCommandBuffer = SystemAPI
+            var entityCommandBuffer = SystemAPI
                 .GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>()
-                .CreateCommandBuffer(state.WorldUnmanaged)
-                .AsParallelWriter();
+                .CreateCommandBuffer(state.WorldUnmanaged);
 
-            JobHandle towerCooldownTickJob = new TickCooldownJob
+            var entityCommandBuffer1 = SystemAPI
+                .GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>()
+                .CreateCommandBuffer(state.WorldUnmanaged);
+
+            //
+            //
+            //
+
+            JobHandle fireRequestProducerJob = default;
             {
-                CommandBuffer = cooldownEntityCommandBuffer,
-                DeltaTime     = Time.deltaTime,
+                fireRequestProducerJob = new TickCooldownJob
+                {
+                    DeltaTime     = Time.deltaTime,
+                    CommandBuffer = entityCommandBuffer.AsParallelWriter(),
+                }.ScheduleParallel(state.Dependency);
+            }
 
-            }.ScheduleParallel(state.Dependency);
-            
-
+            //
+            //
+            //
 
             int enemyWithPosCount = m_EnemyWithPosQuery.CalculateEntityCount();
             var enemyWithPos      = new NativeArray<EnemyPositionData>(enemyWithPosCount, Allocator.TempJob);
@@ -100,34 +104,59 @@ namespace WeatherTheStorm.Tower
                 enemyWithPos[enemyPosIdx++] = data;
             }
 
-            var closestTargetingEntityCommandBuffer = SystemAPI
-                .GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>()
-                .CreateCommandBuffer(state.WorldUnmanaged)
-                .AsParallelWriter();
+            //
+            //
+            //
 
-
-            JobHandle findClosestHandle = new FindClosestJob
+            JobHandle createProjectileRequestProducer = default;
             {
-                CommandBuffer = closestTargetingEntityCommandBuffer,
-                Config        = SystemAPI.GetSingleton<Config>(),
-                Enemies       = enemyWithPos,
-            }.ScheduleParallel(state.Dependency);
+                createProjectileRequestProducer = new FindEnemyTargetJob
+                {
+                    Enemies       = enemyWithPos,
+                    Config        = SystemAPI.GetSingleton<Config>(),
+                    CommandBuffer = entityCommandBuffer1.AsParallelWriter(),
+                }.ScheduleParallel(fireRequestProducerJob);
+            }
 
-            state.Dependency = JobHandle.CombineDependencies(towerCooldownTickJob, findClosestHandle);
+            state.Dependency = JobHandle.CombineDependencies(fireRequestProducerJob, createProjectileRequestProducer); ;
 
             enemyWithPos.Dispose(state.Dependency);
         }
 
         [BurstCompile]
-        [WithAll(typeof(ReadyToFireTag))]
-        partial struct FindClosestJob : IJobEntity
+        partial struct TickCooldownJob : IJobEntity
         {
-            [ReadOnly] public NativeArray<EnemyPositionData>     Enemies;
-            [ReadOnly] public Config                             Config;
-                       public EntityCommandBuffer.ParallelWriter CommandBuffer;
+            public float                              DeltaTime;
+            public EntityCommandBuffer.ParallelWriter CommandBuffer;
 
-            void Execute([ChunkIndexInQuery] int chunkIndex, Entity entity, in LocalTransform transform, in TargetClosest config, in Projectile projectile)
+            public void Execute([ChunkIndexInQuery] int chunkIndex, in Entity entity, ref AttackCooldown cooldown)
             {
+                cooldown.Elapsed += DeltaTime;
+                if(cooldown.Elapsed >= cooldown.Duration)
+                {
+                    cooldown.Elapsed = 0.0f;
+
+                    CommandBuffer.SetComponentEnabled<AttackCooldown>(chunkIndex, entity, false);
+                }
+            }
+        }
+
+
+        [BurstCompile]
+        [WithNone(typeof(AttackCooldown))]
+        partial struct FindEnemyTargetJob : IJobEntity
+        {
+            [ReadOnly] public NativeArray<EnemyPositionData> Enemies;
+            [ReadOnly] public Config                         Config;
+            public EntityCommandBuffer.ParallelWriter        CommandBuffer;
+
+            void Execute([ChunkIndexInQuery] int chunkIndex, in Entity entity, in TargetingConfig targeting, in LocalTransform transform, in TowerProjectile projectile)
+            {
+                //
+                // TODO:
+                // x) Should switch on the request mode.
+                //
+
                 Entity closestEnemy       = Entity.Null;
                 float  closestSqrDistance = float.MaxValue;
                 for (int enemyIdx = 0; enemyIdx < Enemies.Length; ++enemyIdx)
@@ -135,7 +164,7 @@ namespace WeatherTheStorm.Tower
                     float3 towerPosition = transform.Position;
                     float3 enemyPosition = Enemies[enemyIdx].Position;
                     float  sqrDistance   = math.distancesq(towerPosition, enemyPosition);
-                    float  sqrRadius     = config.SqrRadius;
+                    float  sqrRadius     = targeting.SqrRange;
 
                     if (sqrDistance <= sqrRadius && sqrDistance < closestSqrDistance)
                     {
@@ -146,58 +175,16 @@ namespace WeatherTheStorm.Tower
 
                 if (closestEnemy != Entity.Null)
                 {
-                    CommandBuffer.RemoveComponent<ReadyToFireTag>(chunkIndex, entity);
-
-                    //
-                    // TODO:
-                    // x) We might simply bake the projectile at baking time on the tower entities.
-                    //    This simply depends on if we want to tie projectiles to towers.
-                    //
-
-                    Entity projectilePrefab = projectile.Type switch
+                    if (projectile.Prefab != null)
                     {
-                        ProjectileType.Rocket => Config.Rocket,
-                        _                     => Entity.Null,
-                    };
+                        Entity projectileEntity = CommandBuffer.Instantiate(chunkIndex, projectile.Prefab);
+                        CommandBuffer.AddComponent(chunkIndex, projectileEntity, new ProjectileTarget
+                        {
+                            Entity = closestEnemy,
+                        });
+                    }
 
-                    //
-                    // TODO:
-                    // x) I think a better way would be to not specify the damage itself, but specify
-                    //    values that allows the projectile to compute its own damage. Let's say each
-                    //    tower had a physical damage state and a magical damage state,
-                    //    we'd simply forward that to the projectile and let it compute by itself
-                    //    its damage formula. For example, rockets could be something like:
-                    //    40 + (physical_damage * 10) + (magical_damage * 2)
-                    //
-
-                    Entity projectileEntity = CommandBuffer.Instantiate(chunkIndex, projectilePrefab);
-                    CommandBuffer.AddComponent(chunkIndex, projectileEntity, new ProjectileDamage
-                    {
-                        Damage = 10.0f,
-                    });
-                    CommandBuffer.AddComponent(chunkIndex, projectileEntity, new HomingProjectile
-                    {
-                        Speed  = 1.0f,
-                        Target = closestEnemy,
-                    });
-                }
-            }
-        }
-
-        [BurstCompile]
-        [WithNone(typeof(ReadyToFireTag))]
-        partial struct TickCooldownJob : IJobEntity
-        {
-            public EntityCommandBuffer.ParallelWriter CommandBuffer;
-            public float                              DeltaTime;
-
-            public void Execute([ChunkIndexInQuery] int chunkIndex, Entity entity, ref AttackCooldown cooldown)
-            {
-                cooldown.Elapsed += DeltaTime;
-                if(cooldown.Elapsed >= cooldown.Duration)
-                {
-                    CommandBuffer.AddComponent<ReadyToFireTag>(chunkIndex, entity);
-                    cooldown.Elapsed = 0.0f;
+                    CommandBuffer.SetComponentEnabled<AttackCooldown>(chunkIndex, entity, true);
                 }
             }
         }

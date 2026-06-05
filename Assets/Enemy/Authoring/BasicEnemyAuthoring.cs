@@ -17,7 +17,7 @@ namespace WeatherTheStorm.Enemy
                 AddComponent(entity, new PathAgent
                 {
                     Destination = float3.zero,
-                    Speed       = 1.0f,
+                    // Speed       = 1.0f,
                 });
                 AddComponent(entity, new PathPosition
                 {

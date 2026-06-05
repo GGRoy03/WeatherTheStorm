@@ -13,10 +13,7 @@ using WeatherTheStorm.Enemy;
 
 namespace WeatherTheStorm.Tower
 {
-    public enum TargetMode
-    {
-        Closest = 0,
-    }
+
 
     public struct AttackCooldown : IComponentData, IEnableableComponent
     {
@@ -56,6 +53,8 @@ namespace WeatherTheStorm.Tower
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
+            state.RequireForUpdate<Config>();
+
             m_EnemyWithPosQuery = SystemAPI.QueryBuilder()
                 .WithAll<EnemyTag, LocalTransform>()
                 .Build();

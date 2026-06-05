@@ -9,8 +9,12 @@ namespace WeatherTheStorm.Enemy
 {
     public struct PathAgent : IComponentData
     {
+        public float3 From;
         public float3 Destination;
-        public float  Speed;
+        public float  SqrMinDistanceRequired;
+
+        public int    AgentID;
+        public int    PathID;
     }
 
     public struct PathPosition : IComponentData
@@ -24,27 +28,53 @@ namespace WeatherTheStorm.Enemy
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            float deltaTime = SystemAPI.Time.DeltaTime;
-
-            state.Dependency = new MoveToJob
-            {
-                deltaTime = SystemAPI.Time.DeltaTime
-            }.ScheduleParallel(state.Dependency);
         }
     }
 
 
-    [BurstCompile]
-    [WithAll(typeof(EnemyTag))]
-    public partial struct MoveToJob : IJobEntity
-    {
-        public float deltaTime;
+    //[BurstCompile]
+    //[WithAll(typeof(EnemyTag))]
+    //public partial struct MoveToJob : IJobEntity
+    //{
+    //    public float deltaTime;
 
-        void Execute(in PathAgent agent, ref LocalTransform transform, ref PathPosition path)
+    //    void Execute(in PathAgent agent, ref LocalTransform transform, ref PathPosition path)
+    //    {
+    //        float3 direction = math.normalize(agent.Destination - transform.Position);
+    //        transform.Position += agent.Speed * deltaTime * direction;
+    //        path.Position       = transform.Position;
+    //    }
+    //}
+
+    [BurstCompile]
+    public partial struct FindPathJob : IJobEntity
+    {
+        void Execute(in PathAgent pathAgent)
         {
-            float3 direction = math.normalize(agent.Destination - transform.Position);
-            transform.Position += agent.Speed * deltaTime * direction;
-            path.Position       = transform.Position;
+            var fromPos = pathAgent.From;
+            var destPos = pathAgent.Destination;
+            var minDist = pathAgent.SqrMinDistanceRequired;
+
+            //
+            // TODO:
+            // Does this handle float errors at all?
+            //
+
+            if(!math.all(fromPos == destPos))
+            {
+                var lengthRemaining = math.distancesq(fromPos, destPos);
+                if(lengthRemaining > minDist)
+                {
+                    //
+                    // TODO:
+                    // This means this agent needs a path request.
+                    // I want a path: From -> Dest
+                    // The orignal code does it from a system approach. Why.
+                    // Why don't we keep it local to the agent?
+                    // Could it be a funneling thing? Or simply trying to separate the system?
+                    //
+                }
+            }
         }
     }
 }

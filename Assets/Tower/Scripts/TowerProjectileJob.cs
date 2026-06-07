@@ -1,6 +1,5 @@
 using Unity.Burst;
 using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 
 namespace WeatherTheStorm.Tower
@@ -9,7 +8,18 @@ namespace WeatherTheStorm.Tower
     {
         public float Elapsed;
         public float Duration;
+
+        public TowerCooldown(float duration)
+        {
+            Elapsed  = 0.0f;
+            Duration = duration;
+        }
     }
+
+    //
+    // NOTE:
+    // x) IJob is probably better here, this is light work.
+    //
 
     [BurstCompile]
     public struct TowerTryFireJob : IJobParallelFor

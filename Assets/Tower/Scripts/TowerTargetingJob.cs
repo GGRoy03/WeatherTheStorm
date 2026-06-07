@@ -15,6 +15,12 @@ namespace WeatherTheStorm.Tower
     {
         public TargetMode Mode;
         public float      SqrRange;
+
+        public TowerTargeting(TargetMode mode,  float sqrRange)
+        {
+            Mode     = mode;
+            SqrRange = sqrRange;
+        }
     }
 
     //
@@ -27,11 +33,12 @@ namespace WeatherTheStorm.Tower
     [BurstCompile]
     public struct TowerTargetingJob : IJobParallelFor
     {
-        [ReadOnly] public NativeArray<float3>         TowerPositions;
-        [ReadOnly] public NativeArray<TowerTargeting> TowerTargetings;
-        [ReadOnly] public NativeArray<float3>         EnemyPositions;
-                   public NativeArray<int>            TargetIndices;
-                   public NativeArray<Quaternion>     TargetRotations;   
+        public NativeArray<float3>.ReadOnly         TowerPositions;
+        public NativeArray<TowerTargeting>.ReadOnly TowerTargetings;
+        public NativeArray<float3>.ReadOnly         EnemyPositions;
+        public NativeArray<int>                     TargetIndices;
+        public NativeArray<Quaternion>              TargetRotations;
+
         public void Execute(int index)
         {
             int bestIndex     = -1;

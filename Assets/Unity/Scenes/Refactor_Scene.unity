@@ -130,7 +130,7 @@ GameObject:
   - component: {fileID: 259631498}
   - component: {fileID: 259631499}
   m_Layer: 0
-  m_Name: EnemyManager
+  m_Name: Enemy System
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -163,8 +163,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 77c356ff5b72e394bbd588928683915b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_MaximumEnemyCount: 50
   m_EnemyPrefab: {fileID: 2603689063193225548, guid: 12a8487fd10f4934a8af10d4ab9773fd, type: 3}
+  m_MaximumEnemyCount: 50
 --- !u!1 &727237156
 GameObject:
   m_ObjectHideFlags: 0
@@ -176,7 +176,7 @@ GameObject:
   - component: {fileID: 727237157}
   - component: {fileID: 727237158}
   m_Layer: 0
-  m_Name: TowerManager
+  m_Name: Tower System
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -209,11 +209,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f03c4a2478967224d9c77d1e8e46cc00, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_StubEnemyManager: {fileID: 259631499}
   m_StubTower: {fileID: 11400000, guid: 2abc1265af9964d4c8c9b9300c72e0bf, type: 2}
   m_StubProjectile: {fileID: 11400000, guid: 82a9f5a3f644db047b150b34ccdb7efa, type: 2}
   m_MaximumTowerCount: 20
-  m_MaximumProjectileCount: 100
 --- !u!1 &1153379000
 GameObject:
   m_ObjectHideFlags: 0
@@ -306,6 +304,52 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1630451793
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1630451794}
+  - component: {fileID: 1630451795}
+  m_Layer: 0
+  m_Name: Projectile System
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1630451794
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1630451793}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -0.4683089, y: 0.3325823, z: 0.22439846}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1744416255}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1630451795
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1630451793}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b90a0eaec8cabaa4580733d2a9739707, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_StubProjectile: {fileID: 11400000, guid: 82a9f5a3f644db047b150b34ccdb7efa, type: 2}
+  m_MaximumProjectileCount: 100
 --- !u!1 &1744416254
 GameObject:
   m_ObjectHideFlags: 0
@@ -315,8 +359,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1744416255}
+  - component: {fileID: 1744416256}
   m_Layer: 0
-  m_Name: GameManager
+  m_Name: Game Scheduler
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -337,8 +382,24 @@ Transform:
   m_Children:
   - {fileID: 727237157}
   - {fileID: 259631498}
+  - {fileID: 1630451794}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1744416256
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1744416254}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a27a2b9c0dbf89043a9716feb4195061, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_TowerSystem: {fileID: 727237158}
+  m_EnemySystem: {fileID: 259631499}
+  m_ProjectileSystem: {fileID: 1630451795}
 --- !u!1 &1769062603
 GameObject:
   m_ObjectHideFlags: 0

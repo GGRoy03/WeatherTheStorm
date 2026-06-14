@@ -48,12 +48,12 @@ namespace WeatherTheStorm.Enemy
             {
                 AABB aabb = WorldBounds[enemyIdx];
 
-                Min = math.min(node.Bounds.Min, aabb.Min);
-                Max = math.max(node.Bounds.Max, aabb.Max);
+                Min = math.min(Min, aabb.Min);
+                Max = math.max(Max, aabb.Max);
             }
 
             node.Bounds.Center  = Min + ((Max - Min) * 0.5f);
-            node.Bounds.Extents = (Max - Min) * 0.5f;
+            node.Bounds.Extents = Max - node.Bounds.Center;
 
             OutNodes[nodeIndex] = node;
         }
@@ -114,6 +114,11 @@ namespace WeatherTheStorm.Enemy
                 int leftChildIndex  = NodeCount++;
                 int rightChildIndex = NodeCount++;
 
+                //
+                // TODO:
+                // x) Ugly.
+                //
+
                 BVHNode leftChild = new()
                 {
                     FirstEnemy = node.FirstEnemy,
@@ -132,6 +137,7 @@ namespace WeatherTheStorm.Enemy
                 {
                     LeftChild  = leftChildIndex,
                     EnemyCount = 0,
+                    Bounds     = node.Bounds,
                 };
                 OutNodes[nodeIndex] = rootNode;
 
@@ -165,14 +171,16 @@ namespace WeatherTheStorm.Enemy
             m_Handles = handles;
         }
 
-        public readonly bool CollidesWithAABB(AABB aabb, out EnemyHandle firstHandle)
+        public bool CollidesWithAABB(AABB aabb, out EnemyHandle firstHandle)
         {
             bool result     = false;
             int  foundIndex = TryFindOverlappingAABB(aabb, 0);
 
             if(foundIndex != -1)
             {
-                firstHandle = m_Handles[foundIndex];
+                BVHNode foundNode = m_Nodes[foundIndex];
+
+                firstHandle = m_Handles[foundNode.FirstEnemy];
                 result      = true;
             }
             else
@@ -183,15 +191,24 @@ namespace WeatherTheStorm.Enemy
             return result;
         }
 
-        private readonly int TryFindOverlappingAABB(AABB aabb, int nodeIndex)
+        private int TryFindOverlappingAABB(AABB aabb, int nodeIndex)
         {
             BVHNode node = m_Nodes[nodeIndex];
-            if(node.Bounds.Contains(aabb))
+            if(math.all(node.Bounds.Max >= aabb.Min & aabb.Max >= node.Bounds.Min))
             {
                 if(node.EnemyCount == 0)
                 {
-                    TryFindOverlappingAABB(aabb, node.LeftChild);
-                    TryFindOverlappingAABB(aabb, node.LeftChild + 1);
+                    int leftNodeIndex = TryFindOverlappingAABB(aabb, node.LeftChild);
+                    if (leftNodeIndex != -1)
+                    {
+                        return leftNodeIndex;
+                    }
+
+                    int rightNodeIndex = TryFindOverlappingAABB(aabb, node.LeftChild + 1);
+                    if(rightNodeIndex != -1)
+                    {
+                        return rightNodeIndex;
+                    }
                 }
                 else
                 {

@@ -4,38 +4,43 @@ using Unity.Mathematics;
 
 using UnityEngine;
 
+using WeatherTheStorm.Helpers;
+
 namespace WeatherTheStorm.Enemy
 {
-
     public class EnemySystem : MonoBehaviour
     {
         [Header("Prototype")]
         [SerializeField] private GameObject m_EnemyPrefab;
 
         [Header("Scale")]
-        [SerializeField, Min(0)] private int                      m_MaximumEnemyCount;
-                                 private int                      m_EnemyCount;
-                                 private NativeArray<AABB>        m_LocalBounds;
-                                 private NativeArray<float3>      m_WorldPositions;
-                                 private NativeArray<EnemyHandle> m_Handles;
+        [SerializeField, Min(0)] private int m_MaximumEnemyCount;
 
         //
-        // Transient data that must be allocated/de-allocated every frame
-        // Maybe we should allocate this all at once anyway. Like, some sort of transient
-        // data structure. Since we are the producers, we should know the exact amount we have
-        // to allocate for arrays, and for queues it's whatever anyway.
+        // Retained Data
         //
 
-        private NativeArray<AABB>        m_OutWorldBounds;
-        private NativeArray<EnemyHandle> m_OutBVHHandles;
-        private NativeArray<BVHNode>     m_OutBVHNodes;
+        private int                      m_EnemyCount;
+        private NativeArray<EnemyHandle> m_Handles;
+        private Transform[]              m_Transforms;
+        private BoxCollider[]            m_BoxColliders;
 
+        //
+        // Transient Data
+        //
+
+        private NativeArray<float3>      m_Positions;
+        private NativeArray<float3>      m_Scales;
+        private NativeArray<AABB>        m_LocalBounds;
+        private NativeArray<AABB>        m_WorldBounds;
+        private NativeArray<EnemyHandle> m_BVHHandles;
+        private NativeArray<BVHNode>     m_BVHNodes;
 
         private void Start()
         {
-            m_LocalBounds    = new NativeArray<AABB>(m_MaximumEnemyCount, Allocator.Persistent);
-            m_WorldPositions = new NativeArray<float3>(m_MaximumEnemyCount, Allocator.Persistent);
-            m_Handles        = new NativeArray<EnemyHandle>(m_MaximumEnemyCount, Allocator.Persistent);
+            m_Handles      = MemoryHelpers.PermanentAlloc<EnemyHandle>(m_MaximumEnemyCount);
+            m_Transforms   = new Transform[m_MaximumEnemyCount];
+            m_BoxColliders = new BoxCollider[m_MaximumEnemyCount];
 
             for (int enemyIdx = 0; enemyIdx < m_MaximumEnemyCount; ++enemyIdx)
             {
@@ -45,51 +50,80 @@ namespace WeatherTheStorm.Enemy
 
         private void OnDestroy()
         {
-            if (m_LocalBounds.IsCreated)    m_LocalBounds.Dispose();
-            if (m_WorldPositions.IsCreated) m_WorldPositions.Dispose();
-            if (m_Handles.IsCreated)        m_Handles.Dispose();
-
-            if (m_OutWorldBounds.IsCreated) m_OutWorldBounds.Dispose();
-            if (m_OutBVHHandles.IsCreated)  m_OutBVHHandles.Dispose();
-            if (m_OutBVHNodes.IsCreated)    m_OutBVHNodes.Dispose();
+            MemoryHelpers.SafeReleaseUnmanaged(m_Handles);
+            MemoryHelpers.SafeReleaseUnmanaged(m_Positions);
+            MemoryHelpers.SafeReleaseUnmanaged(m_Scales);
+            MemoryHelpers.SafeReleaseUnmanaged(m_LocalBounds);
+            MemoryHelpers.SafeReleaseUnmanaged(m_WorldBounds);
+            MemoryHelpers.SafeReleaseUnmanaged(m_BVHHandles);
+            MemoryHelpers.SafeReleaseUnmanaged(m_BVHNodes);
         }
 
-
-        public JobHandle ScheduleEnemyMoveJob(
-            out int                               outEnemyCount,
+        public void OnFrameEnter(
             out NativeArray<float3>.ReadOnly      outEnemyPositions,
-            out NativeArray<EnemyHandle>.ReadOnly outEnemyHandles
+            out NativeArray<float3>.ReadOnly      outEnemyScales,
+            out NativeArray<EnemyHandle>.ReadOnly outEnemyHandles,
+            out int                               outEnemyCount
             )
         {
+            m_Positions = MemoryHelpers.RefreshTransientAlloc(m_EnemyCount, m_Positions);
+            m_Scales    = MemoryHelpers.RefreshTransientAlloc(m_EnemyCount, m_Scales);
+            for (int enemyIdx = 0; enemyIdx < m_EnemyCount; ++enemyIdx)
+            {
+                m_Positions[enemyIdx] = m_Transforms[enemyIdx].position;
+                m_Scales[enemyIdx]    = m_Transforms[enemyIdx].lossyScale;
+            }
 
-            outEnemyCount     = m_EnemyCount;
-            outEnemyPositions = m_WorldPositions.AsReadOnly();
+            //
+            // NOTE:
+            // x) This might be a bit weird, because is there really something that modifies
+            //    the colliders at runtime? It's easier to do this, so we stick with this.
+            //
+
+            m_LocalBounds = MemoryHelpers.RefreshTransientAlloc(m_EnemyCount, m_LocalBounds);
+            for (int enemyIdx = 0; enemyIdx < m_EnemyCount; ++enemyIdx)
+            {
+                var boxCollider = m_BoxColliders[enemyIdx];
+
+                m_LocalBounds[enemyIdx] = new AABB()
+                {
+                    Center  = boxCollider.center,
+                    Extents = boxCollider.size * 0.5f,
+                };
+            }
+
+            outEnemyPositions = m_Positions.AsReadOnly();
+            outEnemyScales    = m_Scales.AsReadOnly();
             outEnemyHandles   = m_Handles.AsReadOnly();
+            outEnemyCount     = m_EnemyCount;
+        }
 
-            var stubDependency = new JobHandle();
-            return stubDependency;
+        public void OnFrameLeave()
+        {
+            for(int enemyIdx = 0; enemyIdx < m_EnemyCount; ++enemyIdx)
+            {
+                m_Transforms[enemyIdx].position = m_Positions[enemyIdx];
+            }
         }
 
         public JobHandle ScheduleComputeWorldBounds(
             in  JobHandle                    dependency,
             in  NativeArray<float3>.ReadOnly enemyPositions,
+            in  NativeArray<float3>.ReadOnly enemyScales,
             out NativeArray<AABB>            outWorldBounds
             )
         {
-            if(m_OutWorldBounds.IsCreated)
-            {
-                m_OutWorldBounds.Dispose();
-            }
-            m_OutWorldBounds = new NativeArray<AABB>(m_EnemyCount, Allocator.TempJob);
+            m_WorldBounds = MemoryHelpers.RefreshTransientAlloc(m_EnemyCount, m_WorldBounds);
 
-            var computeWorldBoundsJobHandle = new EnemyWorldBoundsJob()
+            var computeWorldBoundsJobHandle = new WorldBoundsJob()
             {
                 Positions   = enemyPositions,
+                Scales      = enemyScales,
                 LocalBounds = m_LocalBounds.AsReadOnly(),
-                WorldBounds = m_OutWorldBounds,
+                WorldBounds = m_WorldBounds,
             }.Schedule(m_EnemyCount, 32, dependency);
 
-            outWorldBounds = m_OutWorldBounds;
+            outWorldBounds = m_WorldBounds;
 
             return computeWorldBoundsJobHandle;
         }
@@ -101,17 +135,8 @@ namespace WeatherTheStorm.Enemy
             out EnemyBVH           outEnemyBVH
             )
         {
-            if (m_OutBVHHandles.IsCreated)
-            {
-                m_OutBVHHandles.Dispose();
-            }
-            m_OutBVHHandles = new NativeArray<EnemyHandle>(m_EnemyCount, Allocator.TempJob);
-
-            if(m_OutBVHNodes.IsCreated)
-            {
-                m_OutBVHNodes.Dispose();
-            }
-            m_OutBVHNodes = new NativeArray<BVHNode>(m_EnemyCount * 2 - 1, Allocator.TempJob);
+            m_BVHHandles = MemoryHelpers.RefreshTransientAlloc(m_EnemyCount, m_BVHHandles);
+            m_BVHNodes   = MemoryHelpers.RefreshTransientAlloc(m_EnemyCount * 2 - 1, m_BVHNodes);
 
             //
             // NOTE:
@@ -122,17 +147,17 @@ namespace WeatherTheStorm.Enemy
 
             for(int enemyIdx = 0; enemyIdx < m_EnemyCount; ++enemyIdx)
             {
-                m_OutBVHHandles[enemyIdx] = m_Handles[enemyIdx];
+                m_BVHHandles[enemyIdx] = m_Handles[enemyIdx];
             }
 
             var buildBVHJobHandle = new BuildBVHJob()
             {
-                EnemyHandles = m_OutBVHHandles,
+                EnemyHandles = m_BVHHandles,
                 WorldBounds  = worldBounds,
-                OutNodes     = m_OutBVHNodes,
+                OutNodes     = m_BVHNodes,
             }.Schedule(dependency);
 
-            outEnemyBVH = new(nodes: m_OutBVHNodes.AsReadOnly(), handles: m_OutBVHHandles.AsReadOnly());
+            outEnemyBVH = new(nodes: m_BVHNodes.AsReadOnly(), handles: m_BVHHandles.AsReadOnly());
 
             return buildBVHJobHandle;
         }
@@ -142,8 +167,6 @@ namespace WeatherTheStorm.Enemy
             var stubHandle = new JobHandle();
             return stubHandle;
         }
-
-
 
         //
         // TODO:
@@ -164,48 +187,14 @@ namespace WeatherTheStorm.Enemy
                 Version = 0,
             };
 
-            //
-            // TODO:
-            // x) Factor this out.
-            //
+            var gameObject = Instantiate(prefab);
+            var position   = new Vector3(UnityEngine.Random.Range(-50.0f, 50.0f), 0.0f, UnityEngine.Random.Range(-50.0f, 50.0f));
 
-            GameObject gameObject = Instantiate(prefab);
+            m_Handles[handle.Index]      = handle;
+            m_Transforms[handle.Index]   = gameObject.transform;
+            m_BoxColliders[handle.Index] = gameObject.GetComponent<BoxCollider>();
 
-            var collider = gameObject.GetComponent<BoxCollider>();
-            if(collider != null)
-            {
-                Bounds  worldBounds = collider.bounds;
-                Vector3 localCenter = collider.transform.InverseTransformPoint(worldBounds.center);
-                Vector3 localExtent = collider.transform.InverseTransformDirection(worldBounds.extents);
-
-                //
-                // TODO: Check min stuff.
-                //
-
-                AABB localBounds = new()
-                {
-                    Center  = localCenter,
-                    Extents = localExtent,
-                };
-
-                float3 position = new()
-                {
-                    x = UnityEngine.Random.Range(-10.0f, 10.0f),
-                    y = 0.0f,
-                    z = UnityEngine.Random.Range(-10.0f, 10.0f),
-                };
-
-                m_LocalBounds[handle.Index]    = localBounds;
-                m_WorldPositions[handle.Index] = position;
-                m_Handles[handle.Index]        = handle;
-
-                gameObject.transform.position = position;
-            }
-
-            //
-            // TODO:
-            // x) Should actually check if we create an entity.
-            //
+            gameObject.transform.position = position;
 
             ++m_EnemyCount;
         }
@@ -216,5 +205,17 @@ namespace WeatherTheStorm.Enemy
         public int Index;
         public int Version;
         public static EnemyHandle Null => new() { Index = -1, Version = -1 };
+    }
+
+    public struct EnemyHealth
+    {
+        public float MaximumHP;
+        public float CurrentHP;
+
+        public EnemyHealth(float maximumHP)
+        {
+            MaximumHP = maximumHP;
+            CurrentHP = 0.0f;
+        }
     }
 }

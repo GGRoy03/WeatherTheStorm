@@ -9,18 +9,20 @@ namespace WeatherTheStorm.Enemy
     public struct EnemyWorldBoundsJob : IJobParallelFor
     {
         public NativeArray<float3>.ReadOnly Positions;
+        public NativeArray<float3>.ReadOnly Scales;
         public NativeArray<AABB>.ReadOnly   LocalBounds;
         public NativeArray<AABB>            WorldBounds;
 
         public void Execute(int index)
         {
-            float3 position = Positions[index];
-            AABB localBounds = LocalBounds[index];
+            var position    = Positions[index];
+            var scale       = Scales[index];
+            var localBounds = LocalBounds[index];
 
             AABB worldBounds = new()
             {
-                Center = localBounds.Center + position,
-                Extents = localBounds.Extents,
+                Center  = localBounds.Center  + position,
+                Extents = localBounds.Extents * scale ,
             };
             WorldBounds[index] = worldBounds;
         }

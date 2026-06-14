@@ -69,16 +69,18 @@ namespace WeatherTheStorm.Projectile
     [BurstCompile]
     public struct CheckProjectileCollisionJob : IJobParallelFor
     {
-        [ReadOnly] public EnemyBVH                    EnemyBVH;
+        public EnemyBVH                               EnemyBVH;
         public NativeArray<ProjectileConfig>.ReadOnly Configs;
-        public NativeArray<AABB>.ReadOnly             LocalBounds;
+        public NativeArray<AABB>.ReadOnly             WorldBounds;
         public NativeArray<float3>.ReadOnly           Positions;
+
+        public NativeQueue<int>.ParallelWriter        ProjectileToDelete;
          
 
         public void Execute(int index)
         {
             float3      position    = Positions[index];
-            AABB        worldBounds = new() { Center = LocalBounds[index].Center + position , Extents = LocalBounds[index].Extents};
+            AABB        worldBounds = WorldBounds[index];
             EnemyHandle firstEnemy  = EnemyHandle.Null;
             bool        isColliding = EnemyBVH.CollidesWithAABB(worldBounds, out firstEnemy);
 
@@ -105,6 +107,8 @@ namespace WeatherTheStorm.Projectile
                     // I have the handle and the damage. So this seems solved... If it works correctly.
                     // Can we try it?
                     //
+
+                    ProjectileToDelete.Enqueue(index);
                 }
             }
         }
